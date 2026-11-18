@@ -22,6 +22,7 @@ El flujo ejecuta una búsqueda interactiva en Wikipedia, correlaciona los evento
 ### 1. Requisitos previos
 * Tener **Python 3.10+** instalado.
 * Tener **Google Chrome** instalado en el sistema.
+* Tener conexión a internet (la primera ejecución descarga ChromeDriver automáticamente mediante Selenium Manager).
 
 ### 2. Clonar el repositorio y preparar el entorno virtual
 Abre una terminal en la carpeta raíz del proyecto y ejecuta:
@@ -48,6 +49,17 @@ python main.py
 ```
 
 Al finalizar la ejecución (toma aproximadamente 5 a 8 segundos), se generarán automáticamente los archivos `registro_red_completo.json` y `resumen_red.csv` en la raíz del proyecto.
+
+### 4. Comparar con Chrome DevTools (opcional)
+Este paso requiere el HAR original exportado desde Chrome DevTools, guardado en la raíz del proyecto con el nombre `captura_chrome.har`. Por seguridad, ese archivo sin sanitizar no se sube al repositorio; solo se incluye `captura_chrome_sanitizada.har`.
+
+Con el entorno virtual activo y después de ejecutar `main.py`:
+
+```bash
+python comparar_y_sanitizar.py
+```
+
+El script genera `captura_chrome_sanitizada.har` e imprime en pantalla la comparación con el registro de Selenium.
 
 ---
 
@@ -76,12 +88,13 @@ Para validar la captura automatizada, se replicó exactamente el mismo flujo en 
 | Criterio / Solicitud | Registro Selenium (`JSON/CSV`) | Chrome DevTools (`HAR`) | Observación y Causa de Diferencia |
 | :--- | :--- | :--- | :--- |
 | **Total de solicitudes** | **54** solicitudes | **50** solicitudes | **49 coincidencias exactas** de red. La diferencia en el conteo total se debe a recursos embebidos (`data:`) y un evento tardío de telemetría. |
-| **Documento principal**<br>(`GET .../wiki/Wikipedia:Portada`) | Estado `200`, protocolo `h2` | Estado `200`, protocolo `h2` | Carga inicial idéntica del documento HTML principal (`text/html`). |
+| **Documento principal**<br>(`GET .../wiki/Wikipedia:Portada`) | Estado `200`, protocolo `h2`, `36,319` bytes, `382.91 ms` | Estado `200`, `36,320` bytes, `543.75 ms` | Carga inicial del documento HTML principal (`text/html`). Diferencia de 1 byte, igual que en las llamadas API, y de `160.84 ms` en duración, atribuible a la variación de latencia entre ejecuciones. |
 | **API de configuración de búsqueda**<br>(`GET .../w/api.php?action=cirrus-config-dump...`) | Estado `200`, `1,032` bytes, `121.56 ms` | Estado `200`, `1,033` bytes, `144.48 ms` | Disparada al enfocar el buscador. Diferencia de 1 byte por compresión/encabezados y `22.9 ms` por variación normal de latencia de red. |
 | **API de autocompletado (Interacción)**<br>(`GET .../w/rest.php/v1/search/title?q=Inteligencia+artificial&limit=10`) | Estado `200`, `1,900` bytes, `78.89 ms` | Estado `200`, `1,901` bytes, `101.36 ms` | Endpoint principal que devuelve en `application/json` las sugerencias de artículos al escribir en la barra de búsqueda. |
+| **Recurso estático**<br>(`GET .../w/load.php?...modules=startup&only=scripts...`) | Estado `200`, protocolo `h2`, `22,657` bytes, `169.64 ms` | Estado `200`, `22,657` bytes, `261.45 ms` | Script JavaScript de arranque de MediaWiki (`text/javascript`). Mismos bytes en ambas capturas; la diferencia de `91.81 ms` corresponde a la variación de latencia entre ejecuciones. |
 | **Headers, Timing, Payload y Response** | Encabezados (`ExtraInfo`), fases DNS/TCP/TLS/TTFB, query params y cuerpo JSON (`getResponseBody`) | Pestañas *Headers*, *Timing*, *Payload* y *Response* en DevTools | Coincidencia total en `content-type`, `cache-control`, parámetros `q` y `limit`, y estructura del JSON devuelto. Las fases DNS/TLS solo aplican en la conexión inicial; las peticiones siguientes reutilizan el socket TCP/TLS. |
 | **Iconos embebidos en CSS**<br>(`GET data:image/svg+xml...`) | **5** registros | **0** registros | El protocolo CDP (`performance` log) reporta eventos `Network.*` incluso para recursos `data:image/svg+xml` incrustados en hojas de estilo; la exportación `.har` de DevTools los omite por no ser peticiones de red reales. |
 | **Telemetría / Analítica**<br>(`POST https://intake-analytics.wikimedia.org/v1/events?hasty=true`) | **0** registros | **1** registro | Petición `beacon` de métricas de Wikimedia disparada milisegundos después del punto de corte de 3 segundos en la ejecución manual. |
 
 ### Conclusión de la Validación
-La captura automatizada mediante Selenium y `ChromeDriver` registra con total fidelidad tanto los recursos estáticos de la carga inicial como las llamadas asíncronas (`Fetch/XHR`) a la API REST de Wikipedia generadas durante la interacción, manteniendo coherencia en códigos de estado HTTP, tamaños de transferencia,
+La captura automatizada mediante Selenium y `ChromeDriver` registra con total fidelidad tanto los recursos estáticos de la carga inicial como las llamadas asíncronas (`Fetch/XHR`) a la API REST de Wikipedia generadas durante la interacción, manteniendo coherencia en códigos de estado HTTP, tamaños de transferencia y tiempos de respuesta. Las diferencias observadas son mínimas (1 byte en algunas respuestas y variaciones de latencia entre ejecuciones) y las solicitudes que solo aparecen en una de las dos capturas (iconos `data:` y telemetría) tienen una causa identificada.
